@@ -28,6 +28,7 @@ from tools.registry import ToolRegistry
 from tools.drone_tools import register_drone_tools
 from tools.vision_tools import register_vision_tools
 from tools.system_tools import register_system_tools
+from tools.safety_tools import register_safety_tools
 from server.app import create_app
 
 
@@ -207,12 +208,14 @@ def main():
         log.info("🔧 Registering tools...")
         tool_registry = ToolRegistry()
         
-        register_drone_tools(tool_registry, drone)
+        # Pass grok_client to drone tools for vision-based safety checks
+        register_drone_tools(tool_registry, drone, grok_client)
         register_vision_tools(tool_registry, drone, grok_client)
         register_system_tools(tool_registry, drone, event_bus)
+        register_safety_tools(tool_registry, drone, grok_client)
         
         tool_count = len(tool_registry)
-        log.success(f"✅ Registered {tool_count} tools")
+        log.success(f"✅ Registered {tool_count} tools (including safety tools)")
         
         if args.debug:
             log.debug("Available tools:")

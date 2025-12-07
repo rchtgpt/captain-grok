@@ -111,3 +111,36 @@ class EmergencyAssessment(BaseModel):
     severity: str = Field(description="Severity level: critical, high, medium, low")
     immediate_actions: List[str] = Field(description="Actions to take immediately")
     explanation: str = Field(description="Explanation of the situation")
+
+
+class ObstacleInfo(BaseModel):
+    """Information about a detected obstacle."""
+    name: str = Field(description="Type/name of obstacle (wall, person, furniture, etc.)")
+    position: str = Field(description="Position relative to drone: front, left, right, above, below")
+    estimated_distance_cm: int = Field(description="Estimated distance in centimeters (rough estimate)")
+    danger_level: str = Field(description="Danger level: high, medium, low")
+    description: str = Field(description="Brief description of the obstacle")
+
+
+class ClearanceCheckResult(BaseModel):
+    """Result of vision-based clearance check for drone safety."""
+    is_clear: bool = Field(description="Whether the area is clear for the intended maneuver")
+    overall_safety_score: int = Field(description="Safety score 0-100 (100 = completely safe)", ge=0, le=100)
+    
+    # Clearance in each direction (estimated in cm, -1 if unknown)
+    front_clearance_cm: int = Field(description="Estimated clearance in front (-1 if cannot determine)")
+    left_clearance_cm: int = Field(description="Estimated clearance to the left (-1 if cannot determine)")
+    right_clearance_cm: int = Field(description="Estimated clearance to the right (-1 if cannot determine)")
+    above_clearance_cm: int = Field(description="Estimated clearance above (-1 if cannot determine)")
+    below_clearance_cm: int = Field(description="Estimated clearance below (-1 if cannot determine)")
+    
+    obstacles: List[ObstacleInfo] = Field(default_factory=list, description="List of detected obstacles")
+    hazards: List[str] = Field(default_factory=list, description="Immediate hazards that require attention")
+    
+    safe_for_flip: bool = Field(description="Is there enough clearance for a flip maneuver (needs ~2m all around)")
+    safe_for_forward_movement: bool = Field(description="Is it safe to move forward")
+    safe_for_lateral_movement: bool = Field(description="Is it safe to move left/right")
+    safe_for_vertical_movement: bool = Field(description="Is it safe to move up/down")
+    
+    recommended_action: str = Field(description="What the drone should do next for safety")
+    warnings: List[str] = Field(default_factory=list, description="Safety warnings to consider")

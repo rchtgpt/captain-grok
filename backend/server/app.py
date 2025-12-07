@@ -34,12 +34,13 @@ def create_app(drone_controller, grok_client, tool_registry, event_bus):
     app.events = event_bus
     
     # Import and register blueprints
-    from .routes import commands_bp, status_bp, voice_bp, video_bp
+    from .routes import commands_bp, status_bp, voice_bp, video_bp, images_bp
     
     app.register_blueprint(commands_bp, url_prefix='/command')
     app.register_blueprint(status_bp, url_prefix='/status')
     app.register_blueprint(voice_bp, url_prefix='/voice')
     app.register_blueprint(video_bp, url_prefix='/video')
+    app.register_blueprint(images_bp, url_prefix='/images')
     
     # Root endpoint
     @app.route('/')
@@ -50,10 +51,12 @@ def create_app(drone_controller, grok_client, tool_registry, event_bus):
             'status': 'operational',
             'endpoints': {
                 'command': '/command - POST - Execute text command',
+                'command_stream': '/command/stream - POST - Execute with SSE streaming',
                 'status': '/status - GET - Get system status',
                 'abort': '/status/abort - POST - Emergency stop',
                 'voice': '/voice/webhook - POST - Twilio webhook',
-                'video': '/video/stream - GET - MJPEG video stream'
+                'video': '/video/stream - GET - MJPEG video stream',
+                'images': '/images/vision/<path> - GET - Serve vision images'
             }
         }
     

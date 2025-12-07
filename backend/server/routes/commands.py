@@ -1,16 +1,23 @@
 """
 Command execution routes for Grok-Pilot.
-Handles text commands and tool execution.
+Handles text commands and tool execution with SSE streaming.
 """
 
 import json
-from flask import Blueprint, request, jsonify, current_app
+import time
+from flask import Blueprint, request, jsonify, current_app, Response
 from core.logger import get_logger
 from utils.helpers import format_tool_results
+from utils.image_logger import get_image_logger
 from ai.prompts import DRONE_PILOT_SYSTEM_PROMPT
 
 commands_bp = Blueprint('commands', __name__)
 log = get_logger('routes.commands')
+
+
+def sse_event(event_type: str, data: dict) -> str:
+    """Format a Server-Sent Event."""
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
 @commands_bp.route('/', methods=['POST'])
@@ -141,6 +148,222 @@ def execute_command():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@commands_bp.route('/stream', methods=['POST'])
+def execute_command_stream():
+    """
+    Execute a text command with Server-Sent Events streaming.
+    
+    Streams real-time updates as each tool executes.
+    
+    Request JSON:
+        {
+            "text": "take off and look around"
+        }
+    
+    SSE Events:
+        - command_received: Initial acknowledgment
+        - ai_response: Grok's response and planned tool calls
+        - tool_start: Tool execution starting
+        - tool_complete: Tool execution finished
+        - found: Target found (for search operations)
+        - error: Error occurred
+        - done: All execution complete
+    """
+    # Parse request before entering generator
+    if not request.is_json:
+        return jsonify({
+            'error': 'Content-Type must be application/json',
+            'status': 'error'
+        }), 400
+    
+    try:
+        data = request.get_json(force=True)
+    except Exception as e:
+        return jsonify({
+            'error': f'Invalid JSON: {str(e)}',
+            'status': 'error'
+        }), 400
+    
+    if not data or 'text' not in data:
+        return jsonify({
+            'error': 'Missing "text" field',
+            'status': 'error'
+        }), 400
+    
+    text = data['text'].strip()
+    if not text:
+        return jsonify({
+            'error': 'Empty command',
+            'status': 'error'
+        }), 400
+    
+    # Get references to app components
+    grok = current_app.grok
+    tools = current_app.tools
+    
+    def generate():
+        """Generator function for SSE stream."""
+        try:
+            log.info(f"Command received: {text}")
+            
+            # Emit: command_received
+            yield sse_event('command_received', {'command': text})
+            
+            # Build messages for Grok
+            messages = [
+                {"role": "system", "content": DRONE_PILOT_SYSTEM_PROMPT},
+                {"role": "user", "content": text}
+            ]
+            
+            # Call Grok with tools
+            result = grok.chat_with_tools(
+                messages=messages,
+                tools=tools.get_schemas()
+            )
+            
+            ai_response = result.get('response', '')
+            tool_calls = result.get('tool_calls', [])
+            
+            if ai_response:
+                log.info(f"🤖 AI Response: {ai_response}")
+            
+            # Log tool calls
+            if tool_calls:
+                log.info("=" * 60)
+                log.info(f"🧠 GROK GENERATED {len(tool_calls)} TOOL CALL(S):")
+                log.info("=" * 60)
+                for i, call in enumerate(tool_calls, 1):
+                    args_str = json.dumps(call['arguments']) if call['arguments'] else "()"
+                    log.info(f"  [{i}] {call['name']}({args_str})")
+                log.info("=" * 60)
+            
+            # Emit: ai_response with tool calls
+            yield sse_event('ai_response', {
+                'response': ai_response,
+                'tool_calls': [
+                    {'name': tc['name'], 'arguments': tc['arguments']}
+                    for tc in tool_calls
+                ]
+            })
+            
+            # Execute each tool
+            tool_results = []
+            successful_count = 0
+            
+            for i, call in enumerate(tool_calls, 1):
+                args_str = json.dumps(call['arguments']) if call['arguments'] else "()"
+                log.info(f"▶️ Executing [{i}/{len(tool_calls)}]: {call['name']}({args_str})")
+                
+                # Emit: tool_start
+                yield sse_event('tool_start', {
+                    'index': i,
+                    'total': len(tool_calls),
+                    'tool': call['name'],
+                    'arguments': call['arguments']
+                })
+                
+                try:
+                    tool_result = tools.execute(
+                        call['name'],
+                        **call['arguments']
+                    )
+                    
+                    status = "✅" if tool_result.success else "❌"
+                    log.info(f"   {status} Result: {tool_result.message}")
+                    
+                    if tool_result.success:
+                        successful_count += 1
+                    
+                    # Check if this is a "found" result from search
+                    if (call['name'] == 'search' and 
+                        tool_result.success and 
+                        tool_result.data and 
+                        tool_result.data.get('found')):
+                        
+                        # Get the latest image URL from image logger
+                        image_url = None
+                        try:
+                            image_logger = get_image_logger()
+                            run_dir = image_logger.run_dir.name
+                            image_id = f"image_{image_logger.image_counter:04d}"
+                            image_url = f"/images/vision/{run_dir}/{image_id}/input_image.jpg"
+                        except Exception as e:
+                            log.warning(f"Could not get image URL: {e}")
+                        
+                        # Emit: found
+                        yield sse_event('found', {
+                            'target': tool_result.data.get('target', ''),
+                            'imageUrl': image_url,
+                            'description': tool_result.data.get('description', ''),
+                            'confidence': tool_result.data.get('confidence', 'unknown'),
+                            'angle': tool_result.data.get('angle')
+                        })
+                    
+                    # Emit: tool_complete
+                    yield sse_event('tool_complete', {
+                        'index': i,
+                        'tool': call['name'],
+                        'success': tool_result.success,
+                        'message': tool_result.message,
+                        'data': tool_result.data
+                    })
+                    
+                    tool_results.append({
+                        'tool': call['name'],
+                        'arguments': call['arguments'],
+                        'success': tool_result.success,
+                        'message': tool_result.message,
+                        'data': tool_result.data
+                    })
+                    
+                except Exception as e:
+                    log.error(f"   ❌ Tool execution failed: {e}")
+                    
+                    # Emit: tool_complete with error
+                    yield sse_event('tool_complete', {
+                        'index': i,
+                        'tool': call['name'],
+                        'success': False,
+                        'message': str(e),
+                        'data': None
+                    })
+                    
+                    tool_results.append({
+                        'tool': call['name'],
+                        'arguments': call['arguments'],
+                        'success': False,
+                        'message': str(e),
+                        'data': None
+                    })
+            
+            # Emit: done
+            yield sse_event('done', {
+                'status': 'success',
+                'total_tools': len(tool_calls),
+                'successful': successful_count
+            })
+            
+        except Exception as e:
+            log.error(f"Command stream failed: {e}")
+            yield sse_event('error', {
+                'message': str(e)
+            })
+            yield sse_event('done', {
+                'status': 'error',
+                'error': str(e)
+            })
+    
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 @commands_bp.route('/raw', methods=['POST'])

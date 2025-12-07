@@ -5,10 +5,13 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { transcribeAudio, sendToBackend } from '@/lib/api-client';
+import { transcribeAudio } from '@/lib/api-client';
 import type { RecordingState, AudioRecorderState } from '@/app/types';
 
-export function useAudioRecorder(onStreamUrlReceived?: (url: string) => void): AudioRecorderState {
+export function useAudioRecorder(
+  onStreamUrlReceived?: (url: string) => void,
+  onTranscriptReady?: (text: string) => Promise<void>
+): AudioRecorderState {
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [transcript, setTranscript] = useState<string>('');
@@ -84,15 +87,9 @@ export function useAudioRecorder(onStreamUrlReceived?: (url: string) => void): A
       setTranscript(transcriptionText);
       setRecordingState('complete');
 
-      // Send to backend
-      const response = await sendToBackend(transcriptionText);
-      
-      // Check for stream URL
-      if (response && onStreamUrlReceived) {
-        const streamUrl = response.stream_url || response.mjpeg_url || response.streamUrl;
-        if (streamUrl) {
-          onStreamUrlReceived(streamUrl);
-        }
+      // Call the transcript ready callback if provided (for SSE streaming)
+      if (onTranscriptReady) {
+        await onTranscriptReady(transcriptionText);
       }
     } catch (err) {
       console.error('Error processing audio:', err);

@@ -5,6 +5,7 @@ from .registry import ToolRegistry
 from .drone_tools import register_drone_tools
 from .vision_tools import register_vision_tools
 from .system_tools import register_system_tools
+from .safety_tools import register_safety_tools
 
 __all__ = [
     'BaseTool',
@@ -12,5 +13,6 @@ __all__ = [
     'ToolRegistry',
     'register_drone_tools',
     'register_vision_tools',
-    'register_system_tools'
+    'register_system_tools',
+    'register_safety_tools'
 ]

@@ -20,13 +20,16 @@ from .prompts import (
     DRONE_PILOT_SYSTEM_PROMPT,
     VISION_ANALYSIS_PROMPT,
     CODE_GENERATION_PROMPT,
-    SEARCH_PROMPT_TEMPLATE
+    SEARCH_PROMPT_TEMPLATE,
+    CLEARANCE_CHECK_PROMPT,
+    OBSTACLE_DETECTION_PROMPT
 )
 from .schemas import (
     VisionAnalysis,
     SearchResult,
     CommandResponse,
-    ReasoningTrace
+    ReasoningTrace,
+    ClearanceCheckResult
 )
 
 T = TypeVar('T', bound=BaseModel)
@@ -587,6 +590,132 @@ class GrokClient:
                 self.log.info(f"  {line}")
         
         self.log.info("=" * 80)
+    
+    def check_clearance(
+        self,
+        frame: np.ndarray,
+        maneuver_type: str = "general",
+        required_clearance_cm: int = 100
+    ) -> ClearanceCheckResult:
+        """
+        Check clearance using vision to detect obstacles and estimate distances.
+        
+        This is a CRITICAL safety function that should be called before risky maneuvers.
+        
+        Args:
+            frame: Image as numpy array (BGR format from OpenCV)
+            maneuver_type: Type of maneuver planned (flip, forward, lateral, vertical, general)
+            required_clearance_cm: Minimum clearance required in cm
+            
+        Returns:
+            ClearanceCheckResult with detailed obstacle analysis and safety assessment
+        """
+        self.log.info(f"🛡️ Checking clearance for {maneuver_type} (need {required_clearance_cm}cm)")
+        
+        # Convert frame to base64
+        image_base64 = self._frame_to_base64(frame)
+        
+        # Build the clearance check prompt
+        system_prompt = CLEARANCE_CHECK_PROMPT.format(
+            maneuver_type=maneuver_type,
+            required_clearance_cm=required_clearance_cm
+        )
+        
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': f"Analyze this drone camera image for obstacle clearance. The drone wants to perform: {maneuver_type}. Required clearance: {required_clearance_cm}cm. Carefully estimate distances to all obstacles and determine if this maneuver is safe."
+                    },
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': f'data:image/jpeg;base64,{image_base64}'
+                        }
+                    }
+                ]
+            }
+        ]
+        
+        result = self.chat_with_structured_output(
+            messages,
+            ClearanceCheckResult,
+            model=self.vision_model
+        )
+        
+        # Log the clearance check result
+        if self.enable_image_logging:
+            self.image_logger.log_vision_request(
+                frame=frame,
+                prompt=f"Clearance check for {maneuver_type}",
+                response=result,
+                metadata={
+                    'model': self.vision_model,
+                    'method': 'check_clearance',
+                    'maneuver_type': maneuver_type,
+                    'required_clearance_cm': required_clearance_cm,
+                    'is_clear': result.is_clear,
+                    'safety_score': result.overall_safety_score,
+                    'obstacles_count': len(result.obstacles)
+                }
+            )
+        
+        # Log summary
+        if result.is_clear:
+            self.log.success(f"✅ Clearance OK! Safety score: {result.overall_safety_score}/100")
+        else:
+            self.log.warning(f"⚠️ Clearance BLOCKED! Safety score: {result.overall_safety_score}/100")
+            for warning in result.warnings[:3]:  # Log first 3 warnings
+                self.log.warning(f"   • {warning}")
+        
+        return result
+    
+    def quick_obstacle_check(self, frame: np.ndarray) -> dict:
+        """
+        Quick obstacle check - faster than full clearance check.
+        Returns basic safety info without full structured analysis.
+        
+        Args:
+            frame: Image as numpy array
+            
+        Returns:
+            Dict with 'safe', 'obstacles', and 'warning' keys
+        """
+        self.log.debug("🔍 Quick obstacle check...")
+        
+        image_base64 = self._frame_to_base64(frame)
+        
+        messages = [
+            {'role': 'system', 'content': OBSTACLE_DETECTION_PROMPT},
+            {
+                'role': 'user',
+                'content': [
+                    {
+                        'type': 'text',
+                        'text': "Quickly scan for nearby obstacles. Is it safe to continue forward? Answer with SAFE or DANGER, then list any obstacles within 1 meter."
+                    },
+                    {
+                        'type': 'image_url',
+                        'image_url': {
+                            'url': f'data:image/jpeg;base64,{image_base64}'
+                        }
+                    }
+                ]
+            }
+        ]
+        
+        response = self.chat(messages, model=self.vision_model, max_tokens=200)
+        
+        is_safe = response.upper().startswith('SAFE')
+        
+        return {
+            'safe': is_safe,
+            'response': response,
+            'warning': None if is_safe else response
+        }
     
     def __repr__(self) -> str:
         """String representation."""
