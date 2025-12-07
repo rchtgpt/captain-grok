@@ -29,9 +29,9 @@ export default function Home(): React.ReactElement {
 
   // Set the video stream URL from environment variable on mount
   useEffect(() => {
-    const videoUrl = process.env.NEXT_PUBLIC_BACKEND_VIDEO_URL;
-    if (videoUrl) {
-      setStreamUrl(videoUrl);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (backendUrl) {
+      setStreamUrl(`${backendUrl}/video/stream`);
     }
   }, [setStreamUrl]);
 
