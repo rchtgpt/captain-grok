@@ -18,6 +18,7 @@ import type {
   SSEFoundPayload,
   SSEDonePayload,
 } from '@/app/types';
+import { useDroneVoice } from './useDroneVoice';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
 
@@ -58,7 +59,11 @@ const playFoundChime = () => {
   }
 };
 
-export function useCommandStream(): CommandStreamState {
+export function useCommandStream(): CommandStreamState & {
+  voiceEnabled: boolean;
+  setVoiceEnabled: (enabled: boolean) => void;
+  voiceAvailable: boolean;
+} {
   const [history, setHistory] = useState<CommandExecution[]>([]);
   const [currentExecution, setCurrentExecution] = useState<CommandExecution | null>(null);
   const [foundTarget, setFoundTarget] = useState<FoundTarget | null>(null);
@@ -67,6 +72,16 @@ export function useCommandStream(): CommandStreamState {
   
   // Ref to track the current execution for updates
   const executionRef = useRef<CommandExecution | null>(null);
+  
+  // Voice narration hook
+  const droneVoice = useDroneVoice({
+    enabled: true,
+    pitch: 0.9,
+    rate: 1.05,
+  });
+  
+  // Check if voice is available
+  const voiceAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   const executeCommand = useCallback(async (text: string) => {
     if (isExecuting) return;
@@ -201,6 +216,9 @@ export function useCommandStream(): CommandStreamState {
           )
         };
         setCurrentExecution({ ...executionRef.current });
+        
+        // 🔊 Voice narration for tool start
+        droneVoice.speakToolStart(payload.tool, payload.arguments || {});
         break;
       }
         
@@ -221,6 +239,9 @@ export function useCommandStream(): CommandStreamState {
           )
         };
         setCurrentExecution({ ...executionRef.current });
+        
+        // 🔊 Voice narration for tool completion (only major tools)
+        droneVoice.speakToolComplete(payload.tool, payload.success, payload.message);
         break;
       }
         
@@ -246,6 +267,9 @@ export function useCommandStream(): CommandStreamState {
         
         // Play chime!
         playFoundChime();
+        
+        // 🔊 Voice narration for found target
+        droneVoice.speakFound(payload.target);
         break;
       }
         
@@ -292,6 +316,10 @@ export function useCommandStream(): CommandStreamState {
     setShowFoundModal,
     executeCommand,
     isExecuting,
-    viewFoundTarget
+    viewFoundTarget,
+    // Voice controls
+    voiceEnabled: droneVoice.enabled,
+    setVoiceEnabled: droneVoice.setEnabled,
+    voiceAvailable
   };
 }

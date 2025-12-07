@@ -29,7 +29,10 @@ export default function Home(): React.ReactElement {
     setShowFoundModal,
     executeCommand,
     isExecuting,
-    viewFoundTarget
+    viewFoundTarget,
+    voiceEnabled,
+    setVoiceEnabled,
+    voiceAvailable
   } = useCommandStream();
   
   const handleTranscriptReady = useCallback(async (text: string) => {
@@ -109,6 +112,43 @@ export default function Home(): React.ReactElement {
               <p className="text-xs text-zinc-600 text-center max-w-[240px]">
                 &ldquo;{transcript}&rdquo;
               </p>
+            )}
+            
+            {/* Voice Narration Toggle */}
+            {voiceAvailable && (
+              <button
+                onClick={() => setVoiceEnabled(!voiceEnabled)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
+                  voiceEnabled
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-zinc-800/50 text-zinc-500 border border-zinc-700/50'
+                }`}
+                title={voiceEnabled ? 'Voice narration ON' : 'Voice narration OFF'}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  {voiceEnabled ? (
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                    />
+                  ) : (
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zm7.414-9l6 6m0-6l-6 6"
+                    />
+                  )}
+                </svg>
+                {voiceEnabled ? 'Voice ON' : 'Voice OFF'}
+              </button>
             )}
           </div>
 
