@@ -13,6 +13,7 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { useAudioRecorder } from './hooks/useAudioRecorder';
 import { useVideoStream } from './hooks/useVideoStream';
 import type { StatusMessage } from './types';
+import { useEffect } from 'react';
 
 export default function Home(): React.ReactElement {
   const { streamUrl, setStreamUrl } = useVideoStream();
@@ -25,6 +26,14 @@ export default function Home(): React.ReactElement {
     startRecording,
     stopRecording,
   } = useAudioRecorder(setStreamUrl);
+
+  // Set the video stream URL from environment variable on mount
+  useEffect(() => {
+    const videoUrl = process.env.NEXT_PUBLIC_BACKEND_VIDEO_URL;
+    if (videoUrl) {
+      setStreamUrl(videoUrl);
+    }
+  }, [setStreamUrl]);
 
   const handleRecordClick = (): void => {
     if (isRecording) {
