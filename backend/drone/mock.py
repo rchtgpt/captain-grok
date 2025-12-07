@@ -173,12 +173,15 @@ class MockDrone:
             left_right: -100 to 100
             forward_backward: -100 to 100
             up_down: -100 to 100
-            yaw: -100 to 100
+            yaw: -100 to 100 (rotation speed)
         """
         if left_right == 0 and forward_backward == 0 and up_down == 0 and yaw == 0:
-            self.log.info("⏸️ [MOCK] Hovering in place")
+            pass  # Hovering - no logging to reduce spam
         else:
-            self.log.debug(f"🎮 [MOCK] RC: lr={left_right}, fb={forward_backward}, ud={up_down}, yaw={yaw}")
+            # Simulate rotation: at yaw speed 25, roughly 35 deg/sec, so ~1.75 deg per call at 20Hz
+            if yaw != 0:
+                rotation_delta = yaw * 0.07  # Roughly calibrated
+                self.rotation = (self.rotation + rotation_delta) % 360
     
     def streamon(self):
         """Start video stream."""

@@ -1,0 +1,62 @@
+Here are test prompts for the full system:
+Basic Flight & Navigation
+take off
+land
+go up 50 centimeters
+move forward 1 meter
+turn left 90 degrees
+turn around
+go back to where you started
+Scanning & Memory Building
+look around
+scan the room
+what do you see?
+do a 360 scan
+check your surroundings
+
+Memory Recall
+what have you seen so far?
+how many people have you seen?
+where was the person in the red shirt?
+what objects have you found?
+describe the people you've seen
+who is to my left?
+what's behind you?
+Target System (Facial Recognition)
+# First add a target via UI, then:
+find Sarah
+search for John
+look for the missing person
+is Sarah in the room?
+# Name someone during flight:
+remember this person as Mike
+call that person Sarah
+name the person on the left as John
+Search Operations
+search this room for people
+look for survivors
+find anyone in distress
+search for a person wearing blue
+Navigation to Remembered Entities
+go to the person in red
+fly to the chair
+navigate to Sarah
+move toward the table
+Combined Commands
+take off and look around
+scan the room and tell me what you see
+find people and report back
+search for Sarah then land
+Status & Info
+what's your battery level?
+how high are you?
+where are you facing?
+what's your current heading?
+Demo Flow (3-minute demo)
+1. Pre-flight: Add target "Sarah" with photo in Targets tab
+2. "take off"
+3. "scan the room for people"
+4. "find Sarah" - triggers 360° search with facial recognition
+5. Chime + toast when found
+6. "who else do you see?"
+7. "go back home and land"

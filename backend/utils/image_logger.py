@@ -196,6 +196,115 @@ class ImageLogger:
             metadata=enriched_metadata
         )
     
+    def log_panorama_frames(
+        self,
+        frames: list,
+        analysis_result: Any = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Log all 8 panorama frames together with their analysis.
+        
+        Args:
+            frames: List of 8 frames from 360° rotation
+            analysis_result: The PanoramaAnalysis result from Grok
+            metadata: Additional metadata
+            
+        Returns:
+            Path to the panorama log directory
+        """
+        # Create panorama directory
+        self.image_counter += 1
+        panorama_dir = self.run_dir / f'panorama_{self.image_counter:04d}'
+        panorama_dir.mkdir(exist_ok=True)
+        
+        directions = ["ahead", "front-right", "right", "back-right", "behind", "back-left", "left", "front-left"]
+        
+        # Save each frame
+        frame_paths = []
+        for i, frame in enumerate(frames):
+            if frame is not None:
+                angle = i * 45
+                direction = directions[i]
+                filename = f'frame_{i+1}_{angle}deg_{direction}.jpg'
+                frame_path = panorama_dir / filename
+                try:
+                    cv2.imwrite(str(frame_path), frame)
+                    frame_paths.append(filename)
+                    self.log.debug(f"💾 Saved panorama frame {i+1}: {filename}")
+                except Exception as e:
+                    self.log.error(f"Failed to save panorama frame {i+1}: {e}")
+                    frame_paths.append(None)
+            else:
+                frame_paths.append(None)
+        
+        # Save analysis output
+        output_data = {
+            'panorama_id': self.image_counter,
+            'timestamp': datetime.now().isoformat(),
+            'num_frames': len(frames),
+            'frame_files': frame_paths,
+            'metadata': metadata or {},
+        }
+        
+        if analysis_result:
+            if hasattr(analysis_result, 'model_dump'):
+                output_data['analysis'] = analysis_result.model_dump()
+            elif isinstance(analysis_result, dict):
+                output_data['analysis'] = analysis_result
+            else:
+                output_data['analysis'] = str(analysis_result)
+        
+        output_path = panorama_dir / 'panorama_analysis.json'
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            self.log.error(f"Failed to save panorama analysis: {e}")
+        
+        # Save summary
+        summary_path = panorama_dir / 'summary.txt'
+        try:
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                f.write(f"360° Panorama Analysis #{self.image_counter}\n")
+                f.write(f"{'=' * 60}\n\n")
+                f.write(f"Timestamp: {output_data['timestamp']}\n")
+                f.write(f"Frames captured: {len([p for p in frame_paths if p])}/8\n\n")
+                
+                f.write("Frames:\n")
+                for i, fp in enumerate(frame_paths):
+                    angle = i * 45
+                    direction = directions[i]
+                    status = "✓" if fp else "✗"
+                    f.write(f"  {status} Frame {i+1}: {angle}° ({direction}) - {fp or 'MISSING'}\n")
+                
+                if analysis_result and hasattr(analysis_result, 'total_people_count'):
+                    f.write(f"\n{'=' * 60}\n")
+                    f.write("Analysis Results:\n")
+                    f.write(f"  Scene: {getattr(analysis_result, 'scene_type', 'unknown')}\n")
+                    f.write(f"  Summary: {getattr(analysis_result, 'summary', 'N/A')}\n")
+                    f.write(f"  People found: {analysis_result.total_people_count}\n")
+                    f.write(f"  Objects found: {getattr(analysis_result, 'total_objects_count', 0)}\n\n")
+                    
+                    if hasattr(analysis_result, 'unique_people'):
+                        f.write("People detected:\n")
+                        for person in analysis_result.unique_people:
+                            f.write(f"  • {person.person_id}: {person.description}\n")
+                            f.write(f"    Frames: {person.frames_visible_in}\n")
+                            f.write(f"    Direction: {person.primary_direction}\n")
+                            if hasattr(person, 'bounding_boxes') and person.bounding_boxes:
+                                f.write(f"    Bounding boxes: {len(person.bounding_boxes)}\n")
+                            f.write("\n")
+        except Exception as e:
+            self.log.error(f"Failed to save panorama summary: {e}")
+        
+        self.run_metadata['images_processed'] = self.image_counter
+        self._save_run_metadata()
+        
+        self.log.success(f"📸 Logged 360° panorama #{self.image_counter} ({len([p for p in frame_paths if p])} frames) → {panorama_dir.name}")
+        
+        return str(panorama_dir)
+    
     def _save_run_metadata(self):
         """Save metadata for the current run."""
         metadata_path = self.run_dir / 'run_metadata.json'

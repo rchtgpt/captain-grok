@@ -22,13 +22,21 @@ from config.settings import get_settings
 from core.logger import setup_logging, get_logger
 from core.events import EventBus
 from core.keyboard_listener import create_keyboard_listener
+from core.memory import get_memory, reset_memory
+from core.inference_engine import init_inference_engine
 from drone.controller import DroneController
+from drone.recorder import get_recorder
 from ai.grok_client import GrokClient
 from tools.registry import ToolRegistry
 from tools.drone_tools import register_drone_tools
 from tools.vision_tools import register_vision_tools
 from tools.system_tools import register_system_tools
 from tools.safety_tools import register_safety_tools
+from tools.memory_tools import register_memory_tools
+from tools.focused_search import register_focused_search_tools
+from core.face_recognition_service import get_face_service
+from core.tailing import init_tailing_controller
+from core.targets import get_target_manager
 from server.app import create_app
 
 
@@ -192,17 +200,51 @@ def main():
                 log.info("Tip: Use --mock flag to test without drone hardware")
                 sys.exit(1)
         
+        # Initialize session recorder
+        log.info("🎬 Initializing session recorder...")
+        recorder = get_recorder()
+        
+        # Subscribe recorder to drone events for auto-start/stop
+        event_bus.subscribe('drone.takeoff', lambda data: recorder.on_takeoff())
+        event_bus.subscribe('drone.land', lambda data: recorder.on_land())
+        event_bus.subscribe('emergency_land', lambda data: recorder.on_land())
+        
+        log.success("✅ Session recorder ready (auto-records on takeoff)")
+        
         # Start video stream if enabled (for MJPEG web streaming)
         # Note: OpenCV window display is disabled in server mode 
         # Access video via GET /video/stream endpoint
         if settings.VIDEO_ENABLED and drone.video:
             log.info("📹 Starting video stream...")
             try:
+                # Attach recorder to video stream
+                drone.video.set_recorder(recorder)
                 drone.video.start()
-                log.success("✅ Video stream started")
+                log.success("✅ Video stream started (with face detection overlay)")
                 log.info("📺 Video available at GET /video/stream")
             except Exception as e:
                 log.warning(f"Video stream failed: {e}")
+        
+        # Initialize memory system
+        log.info("🧠 Initializing memory system...")
+        memory = reset_memory()  # Fresh memory for new session
+        log.success(f"✅ Memory initialized (session: {memory.session_dir.name})")
+        
+        # Initialize async inference engine
+        log.info("⚡ Initializing async inference engine...")
+        inference_engine = init_inference_engine(grok_client)
+        log.success("✅ Inference engine ready")
+        
+        # Initialize face service and tailing controller
+        log.info("👤 Initializing face recognition and tailing...")
+        face_service = get_face_service()
+        target_manager = get_target_manager()
+        tailing_controller = init_tailing_controller(drone, face_service, target_manager)
+        
+        # Connect tailing controller to video stream
+        if drone.video:
+            drone.video.set_tailing_controller(tailing_controller)
+        log.success("✅ Tailing controller ready")
         
         # Register all tools
         log.info("🔧 Registering tools...")
@@ -213,9 +255,11 @@ def main():
         register_vision_tools(tool_registry, drone, grok_client)
         register_system_tools(tool_registry, drone, event_bus)
         register_safety_tools(tool_registry, drone, grok_client)
+        register_memory_tools(tool_registry, drone, grok_client)  # Memory tools
+        register_focused_search_tools(tool_registry, drone, grok_client)  # Focused search tools
         
         tool_count = len(tool_registry)
-        log.success(f"✅ Registered {tool_count} tools (including safety tools)")
+        log.success(f"✅ Registered {tool_count} tools (including search & safety tools)")
         
         if args.debug:
             log.debug("Available tools:")

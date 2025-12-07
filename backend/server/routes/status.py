@@ -130,6 +130,65 @@ def emergency_land():
         return jsonify({'error': str(e)}), 500
 
 
+@status_bp.route('/takeoff', methods=['POST'])
+def takeoff():
+    """
+    🚀 TAKEOFF - Launch the drone and rise to eye level.
+    
+    Response JSON:
+        {
+            "status": "airborne",
+            "message": "...",
+            "battery": 85
+        }
+    """
+    try:
+        log.info("🚀 TAKEOFF triggered via API")
+        
+        # Get battery level first
+        battery = current_app.drone.get_battery()
+        
+        # Take off!
+        current_app.drone.takeoff()
+        
+        return jsonify({
+            'status': 'airborne',
+            'message': '🚀 Drone is airborne!',
+            'battery': battery
+        })
+    
+    except Exception as e:
+        log.error(f"Takeoff failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@status_bp.route('/land', methods=['POST'])
+def land():
+    """
+    ✈️ LAND - Land the drone safely (internal land command).
+    
+    Response JSON:
+        {
+            "status": "landed",
+            "message": "..."
+        }
+    """
+    try:
+        log.info("✈️ LAND triggered via API")
+        
+        # Use the normal land method (not emergency)
+        current_app.drone.land()
+        
+        return jsonify({
+            'status': 'landed',
+            'message': '✅ Drone landed safely!'
+        })
+    
+    except Exception as e:
+        log.error(f"Land failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @status_bp.route('/return-home', methods=['POST'])
 def return_home():
     """

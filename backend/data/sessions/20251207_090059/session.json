@@ -1,0 +1,36 @@
+{
+  "session_id": "20251207_090059",
+  "start_time": "2025-12-07T09:00:59.683209",
+  "end_time": "2025-12-07T09:01:44.464497",
+  "duration_seconds": 44.781276,
+  "frame_count": 460,
+  "fps": 30.0,
+  "resolution": [
+    960,
+    720
+  ],
+  "targets_found": [],
+  "events": [
+    {
+      "type": "session_start",
+      "timestamp": "2025-12-07T09:00:59.683222",
+      "frame_number": 0,
+      "data": {
+        "manual": false
+      }
+    },
+    {
+      "type": "land",
+      "timestamp": "2025-12-07T09:01:44.458168",
+      "frame_number": 460,
+      "data": {}
+    },
+    {
+      "type": "session_stop",
+      "timestamp": "2025-12-07T09:01:44.458213",
+      "frame_number": 460,
+      "data": {}
+    }
+  ],
+  "video_file": "video.mp4"
+}

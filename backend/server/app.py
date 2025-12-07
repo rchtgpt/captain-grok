@@ -34,13 +34,21 @@ def create_app(drone_controller, grok_client, tool_registry, event_bus):
     app.events = event_bus
     
     # Import and register blueprints
-    from .routes import commands_bp, status_bp, voice_bp, video_bp, images_bp
+    from .routes import (
+        commands_bp, status_bp, voice_bp, video_bp, images_bp, 
+        memory_bp, targets_bp, session_bp, sessions_bp, tailing_bp
+    )
     
     app.register_blueprint(commands_bp, url_prefix='/command')
     app.register_blueprint(status_bp, url_prefix='/status')
     app.register_blueprint(voice_bp, url_prefix='/voice')
     app.register_blueprint(video_bp, url_prefix='/video')
     app.register_blueprint(images_bp, url_prefix='/images')
+    app.register_blueprint(memory_bp, url_prefix='/memory')
+    app.register_blueprint(targets_bp, url_prefix='/targets')
+    app.register_blueprint(session_bp)  # /session/* routes
+    app.register_blueprint(sessions_bp)  # /sessions routes
+    app.register_blueprint(tailing_bp)  # /tail/* routes
     
     # Root endpoint
     @app.route('/')

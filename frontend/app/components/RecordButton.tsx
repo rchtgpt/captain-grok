@@ -12,24 +12,35 @@ interface RecordButtonProps {
   isProcessing: boolean;
   onClick: () => void;
   className?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
+
+const sizeClasses = {
+  sm: { button: 'h-16 w-16', icon: 'h-6 w-6' },
+  md: { button: 'h-20 w-20', icon: 'h-8 w-8' },
+  lg: { button: 'h-32 w-32', icon: 'h-10 w-10' }
+};
 
 export function RecordButton({ 
   isRecording, 
   isProcessing, 
   onClick, 
-  className 
+  className,
+  size = 'lg'
 }: RecordButtonProps): React.ReactElement {
+  const sizes = sizeClasses[size];
+  
   return (
     <button
       onClick={onClick}
       disabled={isProcessing}
       className={cn(
-        'relative h-32 w-32 rounded-full transition-all duration-300',
+        'relative rounded-full transition-all duration-300',
         'flex items-center justify-center',
         'border border-zinc-800',
         'disabled:opacity-40 disabled:cursor-not-allowed',
         'focus:outline-none focus:ring-2 focus:ring-zinc-700 focus:ring-offset-2 focus:ring-offset-zinc-950',
+        sizes.button,
         // Default state
         !isRecording && !isProcessing && [
           'bg-zinc-900 hover:bg-zinc-800',
@@ -54,7 +65,8 @@ export function RecordButton({
       
       <Mic 
         className={cn(
-          'h-10 w-10 transition-colors duration-300',
+          'transition-colors duration-300',
+          sizes.icon,
           isRecording ? 'text-zinc-900' : 'text-zinc-400',
           isProcessing && 'animate-pulse'
         )} 

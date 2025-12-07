@@ -2,6 +2,7 @@
 Drone control tools for Grok-Pilot.
 Provides movement commands as callable tools.
 All risky maneuvers include MANDATORY vision-based safety checks.
+Movements update spatial memory for tracking.
 
 SAFETY PHILOSOPHY:
 - If we can't verify it's safe, we DON'T do it
@@ -13,6 +14,7 @@ from typing import Optional
 from .base import BaseTool, ToolResult
 from core.logger import get_logger
 from core.exceptions import SafetyViolationError
+from core.memory import get_memory
 
 
 # =============================================================================
@@ -49,11 +51,53 @@ class TakeoffTool(BaseTool):
     
     def execute(self, **kwargs) -> ToolResult:
         try:
+            import time
+            
+            # Check if already flying - don't reset memory or takeoff again!
+            if self.drone.state_machine.is_flying():
+                self.log.info("Already airborne - skipping takeoff")
+                return ToolResult(
+                    success=True,
+                    message="Already airborne! Ready to proceed.",
+                    data={"status": "already_flying", "skipped": True}
+                )
+            
             self.drone.takeoff()
+            self.log.info("Takeoff complete, stabilizing...")
+            
+            # Longer pause to stabilize - Tello needs time after takeoff
+            time.sleep(2.0)
+            
+            # Rise ABOVE eye level using RC control (more reliable after takeoff)
+            # The discrete move_up command often fails with "Not joystick" error
+            # after takeoff, but RC control works consistently
+            # Target: ~160cm (above eye level for better view)
+            self.log.info("Rising above eye level (+110cm) using RC control...")
+            
+            # Calculate rise time: ~110cm at throttle 40 takes about 3.2 seconds
+            # Tello rises ~30-35cm/s at throttle 40
+            rise_duration = 3.2
+            start_time = time.time()
+            
+            while time.time() - start_time < rise_duration:
+                # Throttle only (0, 0, vertical_speed, 0)
+                self.drone.drone.send_rc_control(0, 0, 40, 0)
+                time.sleep(0.05)  # 20Hz update rate
+            
+            # Stop vertical movement
+            self.drone.drone.send_rc_control(0, 0, 0, 0)
+            time.sleep(0.3)  # Brief settle time
+            
+            self.log.success("Above eye level (~160cm), stabilizing...")
+            
+            # Reset memory position on takeoff
+            memory = get_memory()
+            memory.reset_position()
+            
             return ToolResult(
                 success=True,
-                message="Drone is now airborne and hovering!",
-                data={"height": 50, "status": "hovering"}
+                message="Airborne above eye level (~160cm)! Ready to search.",
+                data={"height": 160, "status": "hovering"}
             )
         except SafetyViolationError as e:
             return ToolResult(success=False, message=f"Safety check failed: {str(e)}")
@@ -483,11 +527,16 @@ class RotateTool(BaseTool):
     def execute(self, degrees: int, **kwargs) -> ToolResult:
         try:
             self.drone.rotate(degrees)
+            
+            # Update memory heading (recalculates all entity positions)
+            memory = get_memory()
+            memory.update_heading(degrees)
+            
             direction = "clockwise" if degrees > 0 else "counter-clockwise"
             return ToolResult(
                 success=True,
                 message=f"Rotated {abs(degrees)}° {direction}",
-                data={"degrees": degrees, "direction": direction}
+                data={"degrees": degrees, "direction": direction, "new_heading": memory.heading}
             )
         except Exception as e:
             return ToolResult(success=False, message=f"Rotation failed: {str(e)}")

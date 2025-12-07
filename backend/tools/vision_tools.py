@@ -1,6 +1,8 @@
 """
-Vision and search tools for Grok-Pilot.
-Uses Grok Vision for object detection and analysis.
+Vision tools for Grok-Pilot.
+Simplified to just basic look/analyze without entity tracking.
+
+For person search with facial recognition, use focused_search tools instead.
 """
 
 from typing import Optional
@@ -14,7 +16,7 @@ class LookTool(BaseTool):
     """Capture and describe what the drone sees."""
     
     name = "look"
-    description = "Take a photo and describe what the drone sees"
+    description = "Take a photo and describe what I see"
     parameters = {
         "type": "object",
         "properties": {},
@@ -40,42 +42,35 @@ class LookTool(BaseTool):
             if frame is None:
                 return ToolResult(success=False, message="Could not capture frame")
             
-            # Analyze with Grok Vision (structured output)
-            self.log.info("🔍 Analyzing scene with Grok Vision (structured output)...")
-            analysis = self.grok.analyze_image_structured(frame, "What do you see?")
-            
-            # Format the response
-            message = f"{analysis.summary}\n\n"
-            if analysis.objects_detected:
-                message += "Objects detected:\n"
-                for obj in analysis.objects_detected:
-                    message += f"  • {obj.name}: {obj.description}"
-                    if obj.estimated_distance:
-                        message += f" ({obj.estimated_distance})"
-                    message += "\n"
-            
-            if analysis.hazards:
-                message += f"\n⚠️ Hazards: {', '.join(analysis.hazards)}"
-            
-            return ToolResult(
-                success=True,
-                message=message.strip(),
-                data={
-                    "summary": analysis.summary,
-                    "objects": [obj.model_dump() for obj in analysis.objects_detected],
-                    "hazards": analysis.hazards,
-                    "scene_description": analysis.scene_description
-                }
-            )
+            # Simple scene description
+            self.log.info("Analyzing scene...")
+            try:
+                analysis = self.grok.analyze_image(
+                    frame,
+                    "Describe what you see. Focus on people, objects, and the environment. Be concise."
+                )
+                
+                return ToolResult(
+                    success=True,
+                    message=analysis if isinstance(analysis, str) else str(analysis),
+                    data={"type": "observation"}
+                )
+            except Exception as e:
+                return ToolResult(
+                    success=False,
+                    message=f"Vision analysis failed: {e}"
+                )
+                
         except Exception as e:
-            return ToolResult(success=False, message=f"Vision analysis failed: {str(e)}")
+            self.log.error(f"Look failed: {e}")
+            return ToolResult(success=False, message=f"Look failed: {str(e)}")
 
 
 class AnalyzeTool(BaseTool):
     """Analyze the current view with a specific question."""
     
     name = "analyze"
-    description = "Analyze what the drone sees and answer a specific question"
+    description = "Analyze what I see and answer a specific question"
     parameters = {
         "type": "object",
         "properties": {
@@ -102,129 +97,38 @@ class AnalyzeTool(BaseTool):
             if frame is None:
                 return ToolResult(success=False, message="Could not capture frame")
             
-            # Analyze with specific question (structured output)
-            self.log.info(f"🔍 Analyzing: {question}")
-            analysis = self.grok.analyze_image_structured(frame, question, detailed=True)
-            
-            # Format response
-            message = f"Q: {question}\n\nA: {analysis.summary}\n\n{analysis.scene_description}"
-            
-            return ToolResult(
-                success=True,
-                message=message,
-                data={
-                    "question": question,
-                    "summary": analysis.summary,
-                    "objects": [obj.model_dump() for obj in analysis.objects_detected],
-                    "scene_description": analysis.scene_description
-                }
-            )
+            # Analyze with specific question
+            self.log.info(f"Analyzing: {question}")
+            try:
+                analysis = self.grok.analyze_image(
+                    frame,
+                    question
+                )
+                
+                return ToolResult(
+                    success=True,
+                    message=analysis if isinstance(analysis, str) else str(analysis),
+                    data={"question": question}
+                )
+            except Exception as e:
+                return ToolResult(
+                    success=False,
+                    message=f"Analysis failed: {e}"
+                )
+                
         except Exception as e:
+            self.log.error(f"Analyze failed: {e}")
             return ToolResult(success=False, message=f"Analysis failed: {str(e)}")
 
 
-class SearchTool(BaseTool):
-    """Search for a target by rotating and using vision."""
-    
-    name = "search"
-    description = "Actively search for a person or object by rotating 360° and using vision analysis"
-    parameters = {
-        "type": "object",
-        "properties": {
-            "target": {
-                "type": "string",
-                "description": "Detailed description of what to search for (e.g., 'person wearing red shirt with glasses')"
-            },
-            "rotation_step": {
-                "type": "integer",
-                "description": "Degrees to rotate between checks (default: 45)",
-                "minimum": 30,
-                "maximum": 90,
-                "default": 45
-            }
-        },
-        "required": ["target"]
-    }
-    
-    def __init__(self, drone_controller, grok_client):
-        super().__init__()
-        self.drone = drone_controller
-        self.grok = grok_client
-        self.log = get_logger('tools.search')
-    
-    def execute(self, target: str, rotation_step: int = 45, **kwargs) -> ToolResult:
-        try:
-            if not self.drone.video or not self.drone.video.is_running:
-                return ToolResult(success=False, message="Video stream not available")
-            
-            if not self.drone.state_machine.is_flying():
-                return ToolResult(success=False, message="Drone must be flying to search")
-            
-            self.log.info(f"Starting search for: {target}")
-            
-            # Calculate rotation angles
-            num_steps = 360 // rotation_step
-            angles = [rotation_step * i for i in range(num_steps)]
-            
-            # Search at each angle
-            for i, angle in enumerate(angles):
-                # Check abort flag
-                if ABORT_FLAG.is_set():
-                    raise AbortException("Search aborted by user")
-                
-                self.log.debug(f"Checking angle {angle}° ({i+1}/{num_steps})")
-                
-                # Capture and analyze
-                frame = self.drone.video.capture_snapshot()
-                if frame is None:
-                    continue
-                
-                # Use structured search with angle for logging
-                result = self.grok.search_for_target_structured(frame, target, angle=angle)
-                
-                self.log.debug(f"Search result at {angle}°: {result.found} (confidence: {result.confidence})")
-                
-                if result.found and result.confidence in ["high", "medium"]:
-                    self.log.success(f"Found {target} at angle {angle}°!")
-                    return ToolResult(
-                        success=True,
-                        message=f"✅ Found {target}! {result.description}",
-                        data={
-                            "found": True,
-                            "angle": angle,
-                            "estimated_distance": result.estimated_distance,
-                            "confidence": result.confidence,
-                            "description": result.description,
-                            "target": target,
-                            "recommended_action": result.recommended_action
-                        }
-                    )
-                
-                # Rotate to next position (unless last iteration)
-                if i < num_steps - 1:
-                    self.drone.rotate(rotation_step)
-                    smart_sleep(1)  # Wait for rotation to complete
-            
-            # Not found after full rotation
-            self.log.info(f"Search complete - {target} not found")
-            return ToolResult(
-                success=False,
-                message=f"Could not find {target} after searching 360°",
-                data={"found": False, "target": target}
-            )
-        
-        except AbortException as e:
-            return ToolResult(success=False, message=str(e))
-        except Exception as e:
-            self.log.error(f"Search failed: {e}")
-            return ToolResult(success=False, message=f"Search failed: {str(e)}")
-
-
 class LookAroundTool(BaseTool):
-    """Rotate 360° and describe the surroundings."""
+    """
+    360° panoramic survey - quick scan of surroundings.
+    For person search, use find_person tool instead.
+    """
     
     name = "look_around"
-    description = "Rotate 360° and describe everything visible from all directions"
+    description = "Do a quick 360° scan to see what's around. For finding specific people, use find_person instead."
     parameters = {
         "type": "object",
         "properties": {},
@@ -243,67 +147,71 @@ class LookAroundTool(BaseTool):
                 return ToolResult(success=False, message="Video stream not available")
             
             if not self.drone.state_machine.is_flying():
-                return ToolResult(success=False, message="Drone must be flying to look around")
+                return ToolResult(success=False, message="Need to be flying to look around")
             
-            self.log.info("Starting 360° panorama")
+            self.log.info("Starting 360° panoramic survey...")
             
-            # Capture at 4 cardinal directions
-            directions = [
-                ("ahead", 0),
-                ("right", 90),
-                ("behind", 180),
-                ("left", 270)
-            ]
+            observations = []
+            num_steps = 8
+            rotation_step = 45
+            directions = ["ahead", "front-right", "right", "back-right", 
+                         "behind", "back-left", "left", "front-left"]
             
-            descriptions = {}
-            
-            for direction_name, angle in directions:
+            for i in range(num_steps):
                 if ABORT_FLAG.is_set():
-                    raise AbortException("Look around aborted")
+                    raise AbortException("Survey aborted")
                 
+                # Rotate (except first position)
+                if i > 0:
+                    self.drone.rotate(rotation_step, smooth=False)
+                    smart_sleep(0.5)
+                
+                # Capture and analyze
                 frame = self.drone.video.capture_snapshot()
-                if frame is not None:
-                    # Use structured analysis
-                    analysis = self.grok.analyze_image_structured(
-                        frame,
-                        f"Briefly describe what you see in this direction",
-                        detailed=False
-                    )
-                    descriptions[direction_name] = analysis.summary
+                if frame is None:
+                    continue
                 
-                # Rotate to next direction (except last)
-                if angle < 270:
-                    self.drone.rotate(90)
-                    smart_sleep(1)
+                direction = directions[i]
+                self.log.debug(f"Analyzing {direction}...")
+                
+                try:
+                    description = self.grok.analyze_image(
+                        frame,
+                        f"Briefly describe what you see (this is looking {direction}). Focus on people and key objects. 1-2 sentences max."
+                    )
+                    observations.append(f"**{direction}**: {description}")
+                except Exception as e:
+                    self.log.warning(f"Analysis failed for {direction}: {e}")
+                    observations.append(f"**{direction}**: (analysis failed)")
             
-            # Compile full description
-            full_desc = "\n".join([
-                f"{dir.capitalize()}: {desc}"
-                for dir, desc in descriptions.items()
-            ])
+            # Complete the rotation
+            self.drone.rotate(rotation_step, smooth=True)
+            
+            # Build summary
+            message = "360° Survey Complete:\n\n" + "\n\n".join(observations)
             
             return ToolResult(
                 success=True,
-                message=full_desc,
-                data={"directions": descriptions}
+                message=message,
+                data={
+                    "type": "survey",
+                    "directions_scanned": len(observations)
+                }
             )
         
         except AbortException as e:
             return ToolResult(success=False, message=str(e))
         except Exception as e:
-            return ToolResult(success=False, message=f"Look around failed: {str(e)}")
+            self.log.error(f"Look around failed: {e}")
+            return ToolResult(success=False, message=f"Survey failed: {str(e)}")
 
 
 def register_vision_tools(registry, drone_controller, grok_client):
     """
-    Register all vision tools.
+    Register vision tools.
     
-    Args:
-        registry: ToolRegistry instance
-        drone_controller: DroneController instance
-        grok_client: GrokClient instance
+    Note: For person search with facial recognition, use register_focused_search_tools.
     """
     registry.register(LookTool(drone_controller, grok_client))
     registry.register(AnalyzeTool(drone_controller, grok_client))
-    registry.register(SearchTool(drone_controller, grok_client))
     registry.register(LookAroundTool(drone_controller, grok_client))

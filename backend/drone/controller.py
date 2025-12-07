@@ -5,8 +5,16 @@ Provides high-level API for drone control with safety features.
 
 from typing import Optional, Union
 from dataclasses import dataclass
+import logging
 
 from djitellopy import Tello
+
+# Suppress djitellopy's verbose logging (especially RC control spam)
+# Must be done after import to ensure the logger exists
+_djitellopy_logger = logging.getLogger('djitellopy')
+_djitellopy_logger.handlers.clear()
+_djitellopy_logger.setLevel(logging.WARNING)
+_djitellopy_logger.propagate = False
 
 from core.logger import get_logger
 from core.events import EventBus
@@ -257,26 +265,63 @@ class DroneController:
         
         self.state_machine.transition_to(DroneState.HOVERING)
     
-    def rotate(self, degrees: int) -> None:
+    def rotate(self, degrees: int, smooth: bool = False) -> None:
         """
         Rotate the drone.
         
         Args:
             degrees: Degrees to rotate (positive = clockwise)
+            smooth: If True, use RC control for smoother rotation (default: False)
         """
         if not self.state_machine.can_execute():
             raise SafetyViolationError("Cannot rotate in current state")
         
         self.state_machine.transition_to(DroneState.EXECUTING)
         
-        if degrees > 0:
-            self.log.info(f"Rotating clockwise {degrees}°")
-            self.drone.rotate_clockwise(abs(degrees))
+        if smooth:
+            self._rotate_smooth(degrees)
         else:
-            self.log.info(f"Rotating counter-clockwise {abs(degrees)}°")
-            self.drone.rotate_counter_clockwise(abs(degrees))
+            if degrees > 0:
+                self.log.info(f"Rotating clockwise {degrees}°")
+                self.drone.rotate_clockwise(abs(degrees))
+            else:
+                self.log.info(f"Rotating counter-clockwise {abs(degrees)}°")
+                self.drone.rotate_counter_clockwise(abs(degrees))
         
         self.state_machine.transition_to(DroneState.HOVERING)
+    
+    def _rotate_smooth(self, degrees: int) -> None:
+        """
+        Smooth rotation using RC control for cinematic panning.
+        
+        Args:
+            degrees: Degrees to rotate (positive = clockwise)
+        """
+        import time
+        
+        # Yaw speed: -100 to 100 (negative = counter-clockwise)
+        # Higher speed = faster but less smooth
+        yaw_speed = 35 if degrees > 0 else -35  # Increased from 25 for better accuracy
+        
+        # Calibrated for Tello at yaw_speed 35:
+        # Actual rotation is approximately 20-25 deg/sec (slower than expected)
+        # Using conservative estimate to ensure full rotation
+        degrees_per_second = 22  # Lowered from 35 to ensure full rotation
+        duration = abs(degrees) / degrees_per_second
+        
+        self.log.info(f"Smooth rotating {'clockwise' if degrees > 0 else 'counter-clockwise'} {abs(degrees)}° over {duration:.1f}s")
+        
+        start_time = time.time()
+        while time.time() - start_time < duration:
+            if ABORT_FLAG.is_set():
+                self.drone.send_rc_control(0, 0, 0, 0)
+                return
+            self.drone.send_rc_control(0, 0, 0, yaw_speed)
+            time.sleep(0.05)  # 20Hz update rate
+        
+        # Stop rotation
+        self.drone.send_rc_control(0, 0, 0, 0)
+        time.sleep(0.2)  # Increased settle time
     
     def flip(self, direction: str) -> None:
         """

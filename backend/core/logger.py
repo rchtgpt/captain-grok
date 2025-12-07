@@ -147,6 +147,13 @@ def setup_logging(level: str = 'INFO', use_colors: bool = True) -> None:
     logging.getLogger('urllib3').setLevel(logging.WARNING)
     logging.getLogger('werkzeug').setLevel(logging.WARNING)
     logging.getLogger('asyncio').setLevel(logging.WARNING)
+    
+    # Suppress djitellopy spam (especially RC control commands)
+    # The library adds its own handler, so we need to clear handlers AND set level
+    djitellopy_logger = logging.getLogger('djitellopy')
+    djitellopy_logger.handlers.clear()  # Remove their custom StreamHandler
+    djitellopy_logger.setLevel(logging.WARNING)
+    djitellopy_logger.propagate = False  # Don't let it propagate to root
 
 
 def get_logger(name: str) -> GrokPilotLogger:

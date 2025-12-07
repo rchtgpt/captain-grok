@@ -17,8 +17,11 @@ import type {
   SSEToolCompletePayload,
   SSEFoundPayload,
   SSEDonePayload,
+  SSETargetFoundPayload,
+  ChatMessage,
 } from '@/app/types';
 import { useDroneVoice } from './useDroneVoice';
+import { toast } from 'sonner';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
 
@@ -59,10 +62,18 @@ const playFoundChime = () => {
   }
 };
 
+/** Generate unique ID for messages */
+function generateMessageId(): string {
+  return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 export function useCommandStream(): CommandStreamState & {
   voiceEnabled: boolean;
   setVoiceEnabled: (enabled: boolean) => void;
   voiceAvailable: boolean;
+  chatMessages: ChatMessage[];
+  isThinking: boolean;
+  clearChat: () => void;
 } {
   const [history, setHistory] = useState<CommandExecution[]>([]);
   const [currentExecution, setCurrentExecution] = useState<CommandExecution | null>(null);
@@ -70,8 +81,29 @@ export function useCommandStream(): CommandStreamState & {
   const [showFoundModal, setShowFoundModal] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isThinking, setIsThinking] = useState(false);
+  
   // Ref to track the current execution for updates
   const executionRef = useRef<CommandExecution | null>(null);
+  
+  // Helper to add chat messages
+  const addChatMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
+    const newMessage: ChatMessage = {
+      ...msg,
+      id: generateMessageId(),
+      timestamp: new Date()
+    };
+    setChatMessages(prev => [...prev, newMessage]);
+    return newMessage.id;
+  }, []);
+  
+  // Clear chat
+  const clearChat = useCallback(() => {
+    setChatMessages([]);
+    setIsThinking(false);
+  }, []);
   
   // Voice narration hook
   const droneVoice = useDroneVoice({
@@ -87,6 +119,16 @@ export function useCommandStream(): CommandStreamState & {
     if (isExecuting) return;
     
     setIsExecuting(true);
+    setIsThinking(true);
+    
+    // Add user command to chat
+    addChatMessage({
+      role: 'user',
+      type: 'command',
+      content: text
+    });
+    
+    // Don't add thinking message - we use the isThinking indicator instead
     
     // Create new execution entry
     const id = crypto.randomUUID();
@@ -157,12 +199,21 @@ export function useCommandStream(): CommandStreamState & {
     } catch (error) {
       console.error('Command stream error:', error);
       
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Add error to chat
+      addChatMessage({
+        role: 'system',
+        type: 'error',
+        content: `Error: ${errorMessage}`
+      });
+      
       // Update execution with error
       if (executionRef.current) {
         const errorExecution = {
           ...executionRef.current,
           status: 'error' as const,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: errorMessage
         };
         executionRef.current = errorExecution;
         setCurrentExecution({ ...errorExecution });
@@ -174,33 +225,74 @@ export function useCommandStream(): CommandStreamState & {
       }
     } finally {
       setIsExecuting(false);
+      setIsThinking(false);
     }
-  }, [isExecuting]);
+  }, [isExecuting, addChatMessage]);
   
-  const handleSSEEvent = (eventType: string, data: unknown) => {
+  const handleSSEEvent = useCallback((eventType: string, data: unknown) => {
     if (!executionRef.current) return;
     
     switch (eventType) {
       case 'command_received':
         // Command acknowledged - already set
+        setIsThinking(false);
         break;
         
       case 'ai_response': {
         const payload = data as SSEAiResponsePayload;
+        const toolCalls = payload.tool_calls || [];
+        
         executionRef.current = {
           ...executionRef.current,
           aiResponse: payload.response,
-          toolCalls: payload.tool_calls,
+          toolCalls: toolCalls,
           // Initialize tool executions as pending
-          toolExecutions: payload.tool_calls.map((tc: ToolCall, i: number) => ({
+          toolExecutions: toolCalls.map((tc: ToolCall, i: number) => ({
             index: i + 1,
-            total: payload.tool_calls.length,
+            total: toolCalls.length,
             tool: tc.name,
             arguments: tc.arguments,
             status: 'pending' as const
           }))
         };
         setCurrentExecution({ ...executionRef.current });
+        
+        // Clear thinking state since we got a response
+        setIsThinking(false);
+        
+        // Add AI response to chat - only if not empty
+        if (payload.response && payload.response.trim()) {
+          addChatMessage({
+            role: 'drone',
+            type: 'response',
+            content: payload.response
+          });
+        }
+        break;
+      }
+      
+      case 'chat': {
+        // New chat message from backend - skip empty messages
+        // Backend sends either { message, type } or { content, message_type } format
+        const payload = data as { message?: string; content?: string; type?: string; message_type?: string };
+        const messageContent = payload.message || payload.content || '';
+        const messageType = payload.type || payload.message_type || 'response';
+        
+        // Skip thinking messages - we use our own indicator
+        if (messageType === 'thinking') {
+          break;
+        }
+        
+        // Clear thinking state since we got a real message
+        setIsThinking(false);
+        
+        if (messageContent && messageContent.trim()) {
+          addChatMessage({
+            role: 'drone',
+            type: messageType as ChatMessage['type'],
+            content: messageContent
+          });
+        }
         break;
       }
         
@@ -216,6 +308,15 @@ export function useCommandStream(): CommandStreamState & {
           )
         };
         setCurrentExecution({ ...executionRef.current });
+        
+        // Add tool start to chat
+        const toolDescription = getToolDescription(payload.tool, payload.arguments);
+        addChatMessage({
+          role: 'drone',
+          type: 'action',
+          content: toolDescription,
+          toolName: payload.tool
+        });
         
         // 🔊 Voice narration for tool start
         droneVoice.speakToolStart(payload.tool, payload.arguments || {});
@@ -240,6 +341,17 @@ export function useCommandStream(): CommandStreamState & {
         };
         setCurrentExecution({ ...executionRef.current });
         
+        // Add tool completion to chat (for significant results)
+        if (payload.message && !isMinorTool(payload.tool)) {
+          addChatMessage({
+            role: 'drone',
+            type: 'action',
+            content: payload.message,
+            toolName: payload.tool,
+            toolSuccess: payload.success
+          });
+        }
+        
         // 🔊 Voice narration for tool completion (only major tools)
         droneVoice.speakToolComplete(payload.tool, payload.success, payload.message);
         break;
@@ -261,6 +373,14 @@ export function useCommandStream(): CommandStreamState & {
         };
         setCurrentExecution({ ...executionRef.current });
         
+        // Add found alert to chat
+        addChatMessage({
+          role: 'drone',
+          type: 'found',
+          content: `Found: ${payload.target}! ${payload.description}`,
+          imageUrl: payload.imageUrl || undefined
+        });
+        
         // Set found target and open modal
         setFoundTarget(found);
         setShowFoundModal(true);
@@ -272,6 +392,32 @@ export function useCommandStream(): CommandStreamState & {
         droneVoice.speakFound(payload.target);
         break;
       }
+      
+      case 'target_found': {
+        // Facial recognition match - target from pre-uploaded photos
+        const payload = data as SSETargetFoundPayload;
+        
+        // Add to chat
+        addChatMessage({
+          role: 'drone',
+          type: 'found',
+          content: `TARGET FOUND: ${payload.target.name}! Match confidence: ${Math.round(payload.confidence * 100)}%`,
+          imageUrl: payload.matchedPhotoUrl || undefined
+        });
+        
+        // Play the chime
+        playFoundChime();
+        
+        // Show toast notification
+        toast.success(`Target Found: ${payload.target.name}`, {
+          description: `${Math.round(payload.confidence * 100)}% match confidence`,
+          duration: 8000,
+        });
+        
+        // 🔊 Voice narration
+        droneVoice.speakFound(payload.target.name);
+        break;
+      }
         
       case 'error': {
         const payload = data as { message: string };
@@ -280,6 +426,13 @@ export function useCommandStream(): CommandStreamState & {
           error: payload.message
         };
         setCurrentExecution({ ...executionRef.current });
+        
+        // Add error to chat
+        addChatMessage({
+          role: 'system',
+          type: 'error',
+          content: payload.message
+        });
         break;
       }
         
@@ -297,10 +450,42 @@ export function useCommandStream(): CommandStreamState & {
         setHistory(prev => [completedExecution, ...prev]);
         setCurrentExecution(null);
         executionRef.current = null;
+        setIsThinking(false);
         break;
       }
     }
-  };
+  }, [addChatMessage, droneVoice]);
+  
+  /** Get human-readable tool description */
+  function getToolDescription(tool: string, args: Record<string, unknown>): string {
+    switch (tool) {
+      case 'takeoff':
+        return 'Taking off...';
+      case 'land':
+        return 'Landing...';
+      case 'rotate':
+        return `Rotating ${args.angle || 0}°...`;
+      case 'move':
+        return `Moving ${args.direction || 'forward'} ${args.distance || 50}cm...`;
+      case 'search_for_target':
+        return `Searching for ${args.target || 'target'}...`;
+      case 'scan_surroundings':
+        return 'Scanning surroundings...';
+      case 'recall':
+        return `Recalling ${args.query || 'memory'}...`;
+      case 'navigate_to':
+        return `Navigating to ${args.reference || 'target'}...`;
+      case 'whats_that':
+        return 'Analyzing what I see...';
+      default:
+        return `Executing ${tool}...`;
+    }
+  }
+  
+  /** Check if tool is minor (don't spam chat) */
+  function isMinorTool(tool: string): boolean {
+    return ['get_battery', 'get_status'].includes(tool);
+  }
 
   // View a found target from history
   const viewFoundTarget = useCallback((target: FoundTarget) => {
@@ -320,6 +505,10 @@ export function useCommandStream(): CommandStreamState & {
     // Voice controls
     voiceEnabled: droneVoice.enabled,
     setVoiceEnabled: droneVoice.setEnabled,
-    voiceAvailable
+    voiceAvailable,
+    // Chat
+    chatMessages,
+    isThinking,
+    clearChat
   };
 }
