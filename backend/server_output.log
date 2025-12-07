@@ -1,0 +1,47 @@
+[15:36:40] 🚀 INFO     main            🚀 Grok-Pilot initializing...
+[15:36:40] 🚀 INFO     main            🤖 Connecting to xAI Grok...
+[15:36:40] 🚀 INFO     grok            Grok client initialized (model: grok-3-fast)
+[15:36:40] ✅ SUCCESS  main            ✅ Grok client ready (model: grok-3-fast)
+[15:36:40] 🚀 INFO     main            🛸 Initializing drone (mock)...
+[15:36:40] 🚀 INFO     drone           Using MockDrone (simulation mode)
+[15:36:40] 🚀 INFO     drone           Connecting to drone...
+[15:36:40] 🚀 INFO     mock_drone      📡 [MOCK] Connecting to drone...
+[15:36:41] ✅ SUCCESS  mock_drone      ✅ [MOCK] Connected!
+[15:36:41] ✅ SUCCESS  drone           Connected! Battery: 100%
+[15:36:41] ✅ SUCCESS  main            ✅ Drone connected! Battery: 100%
+[15:36:41] 🚀 INFO     main            🔧 Registering tools...
+[15:36:41] ✅ SUCCESS  main            ✅ Registered 15 tools
+[15:36:41] 🚀 INFO     main            🌐 Creating Flask server...
+[15:36:41] 🚀 INFO     server          Flask app created successfully
+[15:36:41] ✅ SUCCESS  main            ✅ Flask app ready
+
+======================================================================
+  🚁 GROK-PILOT: Voice-Controlled Drone System
+======================================================================
+  Mode:         MOCK (Testing)
+  Server:       http://0.0.0.0:5001
+  Video:        Disabled
+  Log Level:    INFO
+======================================================================
+
+  🎯 Endpoints:
+     POST /command        - Execute text command
+     GET  /status         - Get system status
+     POST /status/abort   - Emergency stop
+     POST /voice/webhook  - Twilio webhook
+     GET  /video/stream   - MJPEG video stream
+======================================================================
+
+  💡 Quick Start:
+     curl -X POST http://localhost:5001/command \
+       -H 'Content-Type: application/json' \
+       -d '{{"text": "take off and look around"}}'
+
+  Press Ctrl+C to stop
+
+[15:36:41] 🚀 INFO     main            Starting server on 0.0.0.0:5001
+ * Serving Flask app 'server.app'
+ * Debug mode: off
+[15:37:12] 🚀 INFO     routes.commands Command received: take off
+[15:37:12] ❌ ERROR    grok            Tool-enabled API request failed: 400 Client Error: Bad Request for url: https://api.x.ai/v1/chat/completions
+[15:37:12] ❌ ERROR    routes.commands Command execution failed: Grok API request failed: 400 Client Error: Bad Request for url: https://api.x.ai/v1/chat/completions
