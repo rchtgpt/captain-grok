@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Task Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1 class="title">Voice Task Assistant</h1>
+            <p class="subtitle">Describe your task in natural language</p>
+            
+            <div id="loadingSection" class="loading-section hidden">
+                <div class="spinner"></div>
+                <p class="loading-text">Processing audio...</p>
+            </div>
+            
+            <div class="main-layout">
+                <div class="recording-section">
+                    <button id="recordBtn" class="record-btn">
+                        <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                            <line x1="12" y1="19" x2="12" y2="23"></line>
+                            <line x1="8" y1="23" x2="16" y2="23"></line>
+                        </svg>
+                        <span class="btn-text">Start Recording</span>
+                    </button>
+                    
+                    <div id="status" class="status hidden"></div>
+                </div>
+                
+                <div id="streamSection" class="stream-section">
+                    <h2 class="section-title">Live Stream</h2>
+                    <div class="stream-container">
+                        <img id="mjpegStream" class="mjpeg-stream hidden" alt="MJPEG Stream" />
+                        <div id="streamPlaceholder" class="stream-placeholder">
+                            <svg class="stream-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                <line x1="8" y1="21" x2="16" y2="21"></line>
+                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            </svg>
+                            <p>Stream will appear here when available</p>
+                        </div>
+                        <div id="streamError" class="stream-error hidden">
+                            <p>Unable to load stream</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="content-grid">
+                <div id="transcriptSection" class="transcript-section hidden">
+                    <h2 class="section-title">Transcription</h2>
+                    <div id="transcript" class="transcript"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
+

@@ -47,3 +47,6 @@ Thumbs.db
 # Project specific
 snapshots/
 recordings/
+
+# frontend node modules
+frontend/node_modules/
