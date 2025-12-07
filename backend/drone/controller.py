@@ -204,7 +204,11 @@ class DroneController:
             SafetyViolationError: If movement violates safety limits
         """
         if not self.state_machine.can_execute():
-            raise SafetyViolationError("Cannot move in current state")
+            current_state = self.state_machine.state
+            if current_state == DroneState.CONNECTED:
+                raise SafetyViolationError("Cannot move: Drone is on the ground. Call 'takeoff' first to launch the drone.")
+            else:
+                raise SafetyViolationError(f"Cannot move in current state: {current_state.name}")
         
         # Clamp distance to safe limits
         distance = max(

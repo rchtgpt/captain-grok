@@ -184,6 +184,10 @@ class VideoStream:
                 # Get frame from the reader
                 frame = self.frame_read.frame
                 
+                # Convert from RGB to BGR (drone sends RGB, OpenCV expects BGR)
+                if frame is not None:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
                 if frame is None:
                     time.sleep(0.05)  # Wait a bit longer for frame
                     consecutive_errors += 1
