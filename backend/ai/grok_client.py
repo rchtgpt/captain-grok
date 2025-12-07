@@ -372,6 +372,67 @@ class GrokClient:
         
         return code.strip()
     
+    def _strip_json_markdown(self, content: str) -> str:
+        """
+        Strip markdown code block formatting and trailing text from JSON responses.
+        
+        The API sometimes returns:
+        - JSON wrapped in ```json ... ``` blocks
+        - Extra text/explanation after the JSON
+        
+        Args:
+            content: Response content possibly wrapped in markdown or with trailing text
+            
+        Returns:
+            Clean JSON string
+        """
+        content = content.strip()
+        
+        # Check for markdown code blocks
+        if content.startswith('```'):
+            lines = content.split('\n')
+            # Remove first line (```json or ```)
+            lines = lines[1:]
+            # Remove last line if it's ```
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            content = '\n'.join(lines)
+        
+        content = content.strip()
+        
+        # Handle trailing text after JSON object
+        # Find the last closing brace that completes the JSON
+        if content.startswith('{'):
+            brace_count = 0
+            json_end = 0
+            for i, char in enumerate(content):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        json_end = i + 1
+                        break
+            if json_end > 0:
+                content = content[:json_end]
+        
+        # Handle trailing text after JSON array
+        elif content.startswith('['):
+            bracket_count = 0
+            json_end = 0
+            for i, char in enumerate(content):
+                if char == '[':
+                    bracket_count += 1
+                elif char == ']':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        json_end = i + 1
+                        break
+            if json_end > 0:
+                content = content[:json_end]
+        
+        return content.strip()
+    
     def chat_with_structured_output(
         self,
         messages: List[Dict[str, Any]],
@@ -432,6 +493,9 @@ class GrokClient:
                 self.last_reasoning = result['extended_thinking']
                 self.log.info("📊 Extended Thinking Detected")
                 self._log_reasoning(result['extended_thinking'])
+            
+            # Strip markdown code blocks if present (API sometimes wraps JSON in ```json ... ```)
+            content = self._strip_json_markdown(content)
             
             # Parse JSON content into Pydantic model
             parsed = response_format.model_validate_json(content)
