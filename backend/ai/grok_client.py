@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from core.logger import get_logger
 from core.exceptions import GrokAPIError
 from config.settings import Settings
+from utils.image_logger import get_image_logger
 from .prompts import (
     DRONE_PILOT_SYSTEM_PROMPT,
     VISION_ANALYSIS_PROMPT,
@@ -67,6 +68,12 @@ class GrokClient:
         
         # Track reasoning traces for logging
         self.last_reasoning: Optional[str] = None
+        
+        # Image logging
+        self.enable_image_logging = settings.ENABLE_IMAGE_LOGGING
+        if self.enable_image_logging:
+            self.image_logger = get_image_logger(settings.VISION_LOG_DIR)
+            self.log.info("📸 Image logging enabled")
     
     def chat(
         self,
@@ -253,6 +260,19 @@ class GrokClient:
         
         result = self.chat(messages, model=self.vision_model, max_tokens=500)
         
+        # Log the image and result
+        if self.enable_image_logging:
+            self.image_logger.log_vision_request(
+                frame=frame,
+                prompt=prompt,
+                response=result,
+                metadata={
+                    'model': self.vision_model,
+                    'detailed': detailed,
+                    'method': 'analyze_image'
+                }
+            )
+        
         self.log.debug(f"Vision analysis complete")
         return result
     
@@ -277,6 +297,19 @@ class GrokClient:
         
         # Check if target was found
         found = result.upper().startswith('YES')
+        
+        # Log search specifically
+        if self.enable_image_logging:
+            self.image_logger.log_search_request(
+                frame=frame,
+                target=target_description,
+                found=found,
+                result=result,
+                metadata={
+                    'model': self.vision_model,
+                    'method': 'search_for_target'
+                }
+            )
         
         return found, result
     
@@ -460,13 +493,28 @@ class GrokClient:
             model=self.vision_model
         )
         
+        # Log the image and structured result
+        if self.enable_image_logging:
+            self.image_logger.log_vision_request(
+                frame=frame,
+                prompt=prompt,
+                response=result,
+                metadata={
+                    'model': self.vision_model,
+                    'detailed': detailed,
+                    'method': 'analyze_image_structured',
+                    'objects_detected': len(result.objects_detected)
+                }
+            )
+        
         self.log.debug(f"Vision analysis complete: {len(result.objects_detected)} objects detected")
         return result
     
     def search_for_target_structured(
         self,
         frame: np.ndarray,
-        target_description: str
+        target_description: str,
+        angle: Optional[int] = None
     ) -> SearchResult:
         """
         Search for a specific target in an image with structured output.
@@ -504,6 +552,21 @@ class GrokClient:
             SearchResult,
             model=self.vision_model
         )
+        
+        # Log search with structured result
+        if self.enable_image_logging:
+            self.image_logger.log_search_request(
+                frame=frame,
+                target=target_description,
+                found=result.found,
+                angle=angle,
+                result=result,
+                metadata={
+                    'model': self.vision_model,
+                    'method': 'search_for_target_structured',
+                    'confidence': result.confidence
+                }
+            )
         
         return result
     

@@ -171,8 +171,9 @@ grok-pilot/
 │       ├── status.py
 │       └── video.py
 │
-├── utils/           # Utilities (TODO)
-│   └── helpers.py
+├── utils/           # Utilities
+│   ├── helpers.py
+│   └── image_logger.py  # Vision logging system
 │
 ├── .env.example     # Environment template
 ├── .gitignore
@@ -302,6 +303,60 @@ result = registry.execute('takeoff')
 - Verify XAI_API_KEY in .env
 - Check internet connection (USB tethering if WiFi is used for drone)
 - Check xAI API status
+
+---
+
+## 📸 Vision Logging
+
+Grok-Pilot automatically logs all vision processing requests for debugging and analysis:
+
+### Features
+- **Automatic Logging**: All images sent to Grok Vision are saved with outputs
+- **Organized Structure**: Each run creates a timestamped folder
+- **Multiple Formats**: 
+  - Original images (JPG)
+  - JSON outputs (structured data)
+  - Human-readable summaries (TXT)
+- **Search Tracking**: Rotation angles logged for search operations
+- **Run Summaries**: Metadata for each session
+
+### Directory Structure
+```
+logs/vision_logs/
+├── run_20231225_143022/
+│   ├── run_metadata.json
+│   ├── RUN_SUMMARY.txt
+│   ├── image_0001/
+│   │   ├── input_image.jpg
+│   │   ├── analysis_output.json
+│   │   └── summary.txt
+│   ├── image_0002/
+│   │   ├── input_image.jpg
+│   │   ├── analysis_output.json
+│   │   └── summary.txt
+│   └── ...
+└── run_20231225_150833/
+    └── ...
+```
+
+### Configuration
+In `.env`:
+```bash
+# Enable/disable image logging
+ENABLE_IMAGE_LOGGING=true
+
+# Custom log directory (optional)
+VISION_LOG_DIR=logs/vision_logs
+```
+
+### Usage
+Image logging is automatic when vision tools are used:
+- `LookTool` - "What do you see?"
+- `AnalyzeTool` - "Analyze [something]"
+- `SearchTool` - "Find [target]"
+- `LookAroundTool` - "Look around"
+
+All images and responses are automatically saved with metadata.
 
 ---
 

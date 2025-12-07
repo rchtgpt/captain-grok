@@ -45,6 +45,10 @@ class Settings:
         self.LOG_LEVEL: str = os.getenv('LOG_LEVEL', 'INFO').upper()
         self.LOG_COLORS: bool = os.getenv('LOG_COLORS', 'true').lower() == 'true'
         
+        # Image Logging Configuration
+        self.VISION_LOG_DIR: str = os.getenv('VISION_LOG_DIR', 'logs/vision_logs')
+        self.ENABLE_IMAGE_LOGGING: bool = os.getenv('ENABLE_IMAGE_LOGGING', 'true').lower() == 'true'
+        
         # Video Configuration
         self.VIDEO_WIDTH: int = 960
         self.VIDEO_HEIGHT: int = 720

@@ -179,8 +179,8 @@ class SearchTool(BaseTool):
                 if frame is None:
                     continue
                 
-                # Use structured search
-                result = self.grok.search_for_target_structured(frame, target)
+                # Use structured search with angle for logging
+                result = self.grok.search_for_target_structured(frame, target, angle=angle)
                 
                 self.log.debug(f"Search result at {angle}°: {result.found} (confidence: {result.confidence})")
                 
